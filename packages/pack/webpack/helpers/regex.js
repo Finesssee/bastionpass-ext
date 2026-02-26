@@ -19,7 +19,7 @@ const transform = (arr = []) => {
  * @param {Array} nodeModules
  * @return {String}
  */
-const excludeNodeModulesExcept = (nodeModules = []) => `/node_modules/(?!(${transform(nodeModules)}))`;
+const excludeNodeModulesExcept = (nodeModules = []) => `[\\\\/]node_modules[\\\\/](?!(${transform(nodeModules)}))`;
 
 /**
  * Create a regex matching the strings in the array.

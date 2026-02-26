@@ -28,6 +28,7 @@ module.exports = ({ browserslist, noLogicalScss }) => {
             loader: require.resolve('css-loader'),
             options: {
                 url: { filter: handleUrlResolve },
+                esModule: false,
             },
         },
         {
@@ -64,6 +65,7 @@ module.exports = ({ browserslist, noLogicalScss }) => {
                     options: {
                         importLoaders: 1,
                         url: { filter: handleUrlResolve },
+                        esModule: false,
                     },
                 },
             ],

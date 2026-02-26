@@ -8,9 +8,25 @@
  *   stretchedMasterKey → decrypt(protectedSymmetricKey) → userEncKey || userMacKey
  *   userEncKey + userMacKey → decrypt all vault data (EncStrings)
  */
+/* eslint-disable no-restricted-properties -- BW crypto intentionally uses raw WebCrypto */
 import { EncType, KdfType } from './types';
 
 const ENC = new TextEncoder();
+
+// --- Base64 helpers ---
+
+const uint8ToBase64 = (bytes: Uint8Array<ArrayBuffer>): string => {
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+};
+
+const base64ToUint8 = (b64: string): Uint8Array<ArrayBuffer> => {
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return bytes;
+};
 
 /** Derive the 256-bit master key from the user's password and email.
  *  PBKDF2 uses email directly as salt.
@@ -26,9 +42,7 @@ export const deriveMasterKey = async (
     const emailLower = email.toLowerCase();
 
     if (kdf === KdfType.PBKDF2) {
-        const passwordKey = await crypto.subtle.importKey('raw', ENC.encode(password), 'PBKDF2', false, [
-            'deriveBits',
-        ]);
+        const passwordKey = await crypto.subtle.importKey('raw', ENC.encode(password), 'PBKDF2', false, ['deriveBits']);
 
         return crypto.subtle.deriveBits(
             { name: 'PBKDF2', salt: ENC.encode(emailLower), iterations, hash: 'SHA-256' },
@@ -41,15 +55,15 @@ export const deriveMasterKey = async (
         // Argon2id uses SHA-256 of the email as salt
         const emailHash = await crypto.subtle.digest('SHA-256', ENC.encode(emailLower));
 
-        // Use the argon2id WASM module (already a dependency of the extension)
-        const { hash } = await import('argon2id');
-        const result = await hash({
+        const { argon2id } = await import('hash-wasm');
+        const result = await argon2id({
             password: ENC.encode(password),
             salt: new Uint8Array(emailHash),
-            t: iterations,
-            m: (memory ?? 64) * 1024, // memory is in MiB from API, argon2 wants KiB
-            p: parallelism ?? 4,
+            iterations: iterations,
+            memorySize: (memory ?? 64) * 1024, // memory is in MiB from API, hash-wasm wants KiB
+            parallelism: parallelism ?? 4,
             hashLength: 32,
+            outputType: 'binary',
         });
 
         return result.buffer;
@@ -60,7 +74,9 @@ export const deriveMasterKey = async (
 
 /** Stretch the 256-bit master key into a 512-bit stretched key (encKey || macKey)
  *  using HKDF-Expand with info strings "enc" and "mac". */
-export const stretchMasterKey = async (masterKey: ArrayBuffer): Promise<{ encKey: ArrayBuffer; macKey: ArrayBuffer }> => {
+export const stretchMasterKey = async (
+    masterKey: ArrayBuffer
+): Promise<{ encKey: ArrayBuffer; macKey: ArrayBuffer }> => {
     const hkdfKey = await crypto.subtle.importKey('raw', masterKey, 'HKDF', false, ['deriveBits']);
 
     const encKey = await crypto.subtle.deriveBits(
@@ -96,7 +112,12 @@ export const hashMasterPassword = async (masterKey: ArrayBuffer, password: strin
  *  Format: "<encType>.<iv>|<ciphertext>|<mac>" */
 export const parseEncString = (
     encString: string
-): { encType: EncType; iv: Uint8Array; ciphertext: Uint8Array; mac: Uint8Array | null } => {
+): {
+    encType: EncType;
+    iv: Uint8Array<ArrayBuffer>;
+    ciphertext: Uint8Array<ArrayBuffer>;
+    mac: Uint8Array<ArrayBuffer> | null;
+} => {
     const dotIndex = encString.indexOf('.');
     const encType = parseInt(encString.substring(0, dotIndex), 10) as EncType;
     const parts = encString.substring(dotIndex + 1).split('|');
@@ -176,19 +197,4 @@ export const encryptToEncString = async (
     const mac = new Uint8Array(await crypto.subtle.sign('HMAC', hmacKey, hmacData));
 
     return `2.${uint8ToBase64(iv)}|${uint8ToBase64(ciphertext)}|${uint8ToBase64(mac)}`;
-};
-
-// --- Base64 helpers ---
-
-const uint8ToBase64 = (bytes: Uint8Array): string => {
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
-    return btoa(binary);
-};
-
-const base64ToUint8 = (b64: string): Uint8Array => {
-    const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    return bytes;
 };

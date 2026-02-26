@@ -100,7 +100,6 @@ section('Proton Configuration', () => {
 });
 
 const USE_IMPORT_SCRIPTS = BUILD_TARGET === 'chrome' || BUILD_TARGET === 'safari';
-const CHROME_STORE_RELEASE = BUILD_TARGET === 'chrome' && BUILD_STORE_TARGET !== 'edge';
 
 const hasReactRefresh = !webpackOptions.isProduction && !RUNTIME_RELOAD;
 
@@ -238,12 +237,6 @@ const config: Configuration = {
                 : {}),
             /* friends don't let friends publish code with `eval` : but that didn't stop `ttag`  */
             ttag$: path.resolve(__dirname, '../../node_modules/ttag/dist/ttag.min.js'),
-
-            /** Patch openpgp argon2id.min.mjs to avoid WASM base64 inlining
-             * which gets flagged as code-obfuscation on chrome store review */
-            ...(CHROME_STORE_RELEASE
-                ? { './argon2id.min.mjs': path.resolve(__dirname, 'vendor/argon2id.loader.ts') }
-                : {}),
         },
     },
     output: {
@@ -313,41 +306,22 @@ const config: Configuration = {
 
                         if (PUBLIC_KEY) manifest.key = PUBLIC_KEY;
 
-                        /* sanitize manifest when building for production */
+                        /* BastionPass: no manifest transforms needed for
+                         * externally_connectable or external.js content scripts
+                         * since these Proton-specific entries were removed */
                         switch (BUILD_TARGET) {
                             case 'firefox':
-                                /* add the appropriate CSP policies for the development build to connect
-                                 * to unsecure ws:// protocols without firefox trying to upgrade it to
-                                 * wss:// - currently the redux cli tools do not support https */
                                 if (ENV !== 'production') {
                                     manifest.content_security_policy = {
                                         extension_pages:
                                             "connect-src 'self' https: ws:; script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; ",
                                     };
                                 }
-
-                                manifest.content_scripts[1].matches = [
-                                    `https://account.${API_ENV}/*`,
-                                    `https://pass.${API_ENV}/*`,
-                                ];
-                                break;
-                            case 'chrome':
-                                manifest.externally_connectable.matches = [
-                                    `https://account.${API_ENV}/*`,
-                                    `https://pass.${API_ENV}/*`,
-                                ];
-                                break;
-                            case 'safari':
-                                manifest.content_scripts[1].matches = [`https://account.${API_ENV}/*`];
-                                manifest.externally_connectable.matches = [
-                                    `https://account.${API_ENV}/*`,
-                                    `https://pass.${API_ENV}/*`,
-                                ];
                                 break;
                         }
 
                         if (BETA) {
-                            manifest.name = 'Proton Pass (BETA)';
+                            manifest.name = 'BastionPass (BETA)';
                             manifest.icons = {
                                 16: '/assets/protonpass-beta-icon-16.png',
                                 32: '/assets/protonpass-beta-icon-32.png',
