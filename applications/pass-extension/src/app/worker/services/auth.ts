@@ -8,8 +8,7 @@ import { WorkerMessageType } from 'proton-pass-extension/types/messages';
 
 import { SESSION_RESUME_MAX_RETRIES, SESSION_RESUME_RETRY_TIMEOUT } from '@proton/pass/constants';
 import { AccountForkResponse, getAccountForkResponsePayload, getStateKey } from '@proton/pass/lib/auth/fork';
-import { createAuthOrchestrator } from '@proton/pass/lib/auth/bitwarden';
-import { TwoFactorRequiredError } from '@proton/pass/lib/auth/bitwarden';
+import { adaptBitwardenSync, createAuthOrchestrator, TwoFactorRequiredError } from '@proton/pass/lib/auth/bitwarden';
 import { AppStatusFromLockMode, LockMode } from '@proton/pass/lib/auth/lock/types';
 import { ReauthAction } from '@proton/pass/lib/auth/reauth';
 import { createAuthService as createCoreAuthService } from '@proton/pass/lib/auth/service';
@@ -25,7 +24,7 @@ import {
 import { fileStorage } from '@proton/pass/lib/file-storage/fs';
 import browser from '@proton/pass/lib/globals/browser';
 import { lockSync, unlock } from '@proton/pass/store/actions/creators/auth';
-import { cacheCancel, stateDestroy, stopEventPolling } from '@proton/pass/store/actions/creators/client';
+import { bootSuccess, cacheCancel, cacheRequest, stateDestroy, stopEventPolling } from '@proton/pass/store/actions/creators/client';
 import { notification } from '@proton/pass/store/actions/creators/notification';
 import type { Api } from '@proton/pass/types/api/api';
 import type { MaybeNull } from '@proton/pass/types/utils/index';
@@ -89,6 +88,63 @@ export const shouldForceLock = withContext<() => Promise<boolean>>(async (ctx) =
 });
 
 export const createAuthService = (api: Api, authStore: AuthStore) => {
+    /** Resume from a stored Bitwarden session if available. Returns true if
+     *  session was successfully resumed (store is populated, status is READY). */
+    const resumeBitwardenSession = withContext<() => Promise<boolean>>(async (ctx) => {
+        try {
+            const stored = await ctx.service.storage.local.getItem('bw_session');
+            if (!stored) return false;
+
+            const session = JSON.parse(stored as string);
+            if (!session?.accessToken) return false;
+
+            ctx.setStatus(AppStatus.AUTHORIZING);
+            logger.info('[AuthService] Resuming Bitwarden session');
+
+            const orchestrator = createAuthOrchestrator({
+                baseUrl: 'https://vault.southernwind.xyz',
+                deviceIdentifier: await getOrCreateDeviceId(ctx),
+                deviceName: getBrowserName(),
+                deviceType: getBrowserDeviceType(),
+            });
+
+            // Refresh token if expired
+            let activeSession = session;
+            if (session.expiresAt && Date.now() >= session.expiresAt) {
+                logger.info('[AuthService] Bitwarden token expired, refreshing');
+                const refreshed = await orchestrator.refresh(session.refreshToken);
+                activeSession = { ...session, ...refreshed };
+                await ctx.service.storage.local.setItem('bw_session', JSON.stringify(activeSession));
+            }
+
+            // Re-sync and boot
+            const { session: syncedSession, sync: syncData } = await orchestrator.sync(activeSession);
+            await ctx.service.storage.local.setItem('bw_session', JSON.stringify(syncedSession));
+
+            // Hydrate the Proton auth store so authorized checks pass
+            authStore.setUID(`bw-${syncedSession.userId}`);
+            authStore.setUserID(syncedSession.userId);
+
+            // Derive keys from stored symmetric key
+            const keyBytes = Uint8Array.from(atob(syncedSession.userSymmetricKey), (c) => c.charCodeAt(0));
+            const userEncKey = keyBytes.slice(0, 32).buffer;
+            const userMacKey = keyBytes.slice(32, 64).buffer;
+
+            ctx.setStatus(AppStatus.BOOTING);
+            const { shares, items } = await adaptBitwardenSync(syncData, userEncKey, userMacKey);
+            ctx.service.store.dispatch(bootSuccess({ shares, items }));
+            ctx.service.store.dispatch(cacheRequest({ throttle: true }));
+            ctx.setStatus(AppStatus.READY);
+
+            logger.info(`[AuthService] Bitwarden session resumed — ${Object.keys(shares).length} vaults`);
+            return true;
+        } catch (error) {
+            logger.warn('[AuthService] Bitwarden session resume failed, clearing', error);
+            await ctx.service.storage.local.removeItem('bw_session');
+            return false;
+        }
+    });
+
     const authService = createCoreAuthService({
         api,
         authStore,
@@ -100,6 +156,10 @@ export const createAuthService = (api: Api, authStore: AuthStore) => {
                 const environment = getSecondLevelDomain(config.SSO_URL);
                 void sendSafariMessage({ environment });
             }
+
+            // Try resuming a stored Bitwarden session before falling through to Proton
+            const resumed = await resumeBitwardenSession();
+            if (resumed) return false; // false = don't continue Proton flow
 
             /* if worker is logged out (unauthorized or locked) during an init call,
              * this means the login or resumeSession calls failed - we can safely early
@@ -422,13 +482,22 @@ export const createAuthService = (api: Api, authStore: AuthStore) => {
 
                 // Persist the Bitwarden session
                 await ctx.service.storage.local.setItem('bw_session', JSON.stringify(syncedSession));
-                await ctx.service.storage.local.setItem('bw_sync', JSON.stringify(syncData));
+
+                // Hydrate the Proton auth store so authorized checks pass
+                authStore.setUID(`bw-${syncedSession.userId}`);
+                authStore.setUserID(syncedSession.userId);
 
                 ctx.setStatus(AppStatus.AUTHORIZED);
                 logger.info(`[AuthService] Bitwarden login successful for ${payload.email}`);
 
-                // Boot the extension
-                ctx.service.activation.boot();
+                // Adapt Bitwarden data → Pass Redux store format and boot directly
+                ctx.setStatus(AppStatus.BOOTING);
+                const { shares, items } = await adaptBitwardenSync(syncData, userEncKey, userMacKey);
+                ctx.service.store.dispatch(bootSuccess({ shares, items }));
+                ctx.service.store.dispatch(cacheRequest({ throttle: true }));
+                ctx.setStatus(AppStatus.READY);
+
+                logger.info(`[AuthService] Bitwarden boot complete — ${Object.keys(shares).length} vaults, ${Object.values(items).reduce((n, s) => n + Object.keys(s).length, 0)} items`);
 
                 return { ok: true };
             } catch (error) {

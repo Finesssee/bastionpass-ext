@@ -1,3 +1,4 @@
+export { adaptBitwardenSync, buildShares } from './adapter';
 export { createAuthOrchestrator, type AuthOrchestrator, type AuthOrchestratorConfig, type LoginResult } from './orchestrator';
 export { createBitwardenApi, type BitwardenApi, type BitwardenApiConfig, BitwardenApiError, TwoFactorRequiredError } from './api';
 export {

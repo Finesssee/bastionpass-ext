@@ -42,7 +42,7 @@ export const Lobby: FC = () => {
                 })
             );
 
-            if (response.type === 'error') {
+            if (!response.ok) {
                 if (response.error?.includes('Two-factor')) {
                     setShowTwoFactor(true);
                     setError('Enter your two-factor authentication code');
