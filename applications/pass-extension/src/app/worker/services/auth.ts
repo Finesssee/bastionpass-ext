@@ -8,6 +8,8 @@ import { WorkerMessageType } from 'proton-pass-extension/types/messages';
 
 import { SESSION_RESUME_MAX_RETRIES, SESSION_RESUME_RETRY_TIMEOUT } from '@proton/pass/constants';
 import { AccountForkResponse, getAccountForkResponsePayload, getStateKey } from '@proton/pass/lib/auth/fork';
+import { createAuthOrchestrator } from '@proton/pass/lib/auth/bitwarden';
+import { TwoFactorRequiredError } from '@proton/pass/lib/auth/bitwarden';
 import { AppStatusFromLockMode, LockMode } from '@proton/pass/lib/auth/lock/types';
 import { ReauthAction } from '@proton/pass/lib/auth/reauth';
 import { createAuthService as createCoreAuthService } from '@proton/pass/lib/auth/service';
@@ -40,6 +42,36 @@ import noop from '@proton/utils/noop';
 
 export const SESSION_LOCK_ALARM = 'alarm::session-lock';
 export const SESSION_RESUME_ALARM = 'alarm::session-resume';
+
+/** Generate or retrieve a persistent device identifier for Bitwarden API. */
+const getOrCreateDeviceId = async (ctx: any): Promise<string> => {
+    let deviceId = await ctx.service.storage.local.getItem('bw_device_id');
+    if (!deviceId) {
+        deviceId = crypto.randomUUID();
+        await ctx.service.storage.local.setItem('bw_device_id', deviceId);
+    }
+    return deviceId;
+};
+
+/** Detect the browser name for the Bitwarden device name field. */
+const getBrowserName = (): string => {
+    const ua = navigator.userAgent;
+    if (ua.includes('Firefox')) return 'firefox';
+    if (ua.includes('Edg/')) return 'edge';
+    if (ua.includes('Chrome')) return 'chrome';
+    if (ua.includes('Safari')) return 'safari';
+    return 'browser';
+};
+
+/** Map browser to Bitwarden's deviceType enum.
+ *  7 = Chrome Extension, 3 = Firefox Extension, 16 = Safari Extension, 15 = Edge Extension */
+const getBrowserDeviceType = (): number => {
+    const ua = navigator.userAgent;
+    if (ua.includes('Firefox')) return 3;
+    if (ua.includes('Edg/')) return 15;
+    if (ua.includes('Safari')) return 16;
+    return 7; // Chrome
+};
 
 export const getSessionResumeAlarm = () => browser.alarms.get(SESSION_RESUME_ALARM).catch(noop);
 
@@ -363,12 +395,63 @@ export const createAuthService = (api: Api, authStore: AuthStore) => {
         return { ok: confirmed };
     };
 
+    const handleBitwardenLogin = withContext<MessageHandlerCallback<WorkerMessageType.BITWARDEN_LOGIN>>(
+        async (ctx, { payload }) => {
+            try {
+                ctx.setStatus(AppStatus.AUTHORIZING);
+
+                const orchestrator = createAuthOrchestrator({
+                    baseUrl: 'https://vault.southernwind.xyz',
+                    deviceIdentifier: await getOrCreateDeviceId(ctx),
+                    deviceName: getBrowserName(),
+                    deviceType: getBrowserDeviceType(),
+                });
+
+                const twoFactor = payload.twoFactorToken
+                    ? { token: payload.twoFactorToken, provider: payload.twoFactorProvider ?? 0 }
+                    : undefined;
+
+                const { session, userEncKey, userMacKey } = await orchestrator.login(
+                    payload.email,
+                    payload.password,
+                    twoFactor
+                );
+
+                // Sync to get user profile and vault data
+                const { session: syncedSession, sync: syncData } = await orchestrator.sync(session);
+
+                // Persist the Bitwarden session
+                await ctx.service.storage.local.setItem('bw_session', JSON.stringify(syncedSession));
+                await ctx.service.storage.local.setItem('bw_sync', JSON.stringify(syncData));
+
+                ctx.setStatus(AppStatus.AUTHORIZED);
+                logger.info(`[AuthService] Bitwarden login successful for ${payload.email}`);
+
+                // Boot the extension
+                ctx.service.activation.boot();
+
+                return { ok: true };
+            } catch (error) {
+                logger.warn(`[AuthService] Bitwarden login failed`, error);
+                ctx.setStatus(AppStatus.UNAUTHORIZED);
+
+                if (error instanceof TwoFactorRequiredError) {
+                    return { ok: false, error: 'Two-factor authentication required' };
+                }
+
+                const message = error instanceof Error ? error.message : 'Login failed';
+                return { ok: false, error: message };
+            }
+        }
+    );
+
     WorkerMessageBroker.registerMessage(WorkerMessageType.ACCOUNT_PROBE, () => true);
     WorkerMessageBroker.registerMessage(WorkerMessageType.ACCOUNT_FORK, handleAccountFork);
     WorkerMessageBroker.registerMessage(WorkerMessageType.AUTH_CHECK, handleAuthCheck);
     WorkerMessageBroker.registerMessage(WorkerMessageType.AUTH_CONFIRM_PASSWORD, handlePasswordConfirm);
     WorkerMessageBroker.registerMessage(WorkerMessageType.AUTH_INIT, handleInit);
     WorkerMessageBroker.registerMessage(WorkerMessageType.AUTH_UNLOCK, handleUnlock);
+    WorkerMessageBroker.registerMessage(WorkerMessageType.BITWARDEN_LOGIN, handleBitwardenLogin);
 
     /** These alarms may be triggered while the service worker was idle,
      * as such, we should check for the app status before triggering any effects

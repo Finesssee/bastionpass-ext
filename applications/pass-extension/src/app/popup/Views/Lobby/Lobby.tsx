@@ -1,80 +1,149 @@
-import { type FC, useCallback } from 'react';
+import { type FC, useCallback, useState } from 'react';
 
-import { useExtensionClient } from 'proton-pass-extension/lib/components/Extension/ExtensionClient';
-import { PromptForReload } from 'proton-pass-extension/lib/components/Extension/ExtensionError';
-import { useRequestForkWithPermissions } from 'proton-pass-extension/lib/hooks/useRequestFork';
 import { popupMessage, sendMessage } from 'proton-pass-extension/lib/message/send-message';
 import { WorkerMessageType } from 'proton-pass-extension/types/messages';
-import { c } from 'ttag';
 
 import { Button } from '@proton/atoms/Button/Button';
+import { CircleLoader } from '@proton/atoms/CircleLoader/CircleLoader';
 import { useAppState } from '@proton/pass/components/Core/AppStateProvider';
-import { LobbyContent } from '@proton/pass/components/Layout/Lobby/LobbyContent';
 import { LobbyLayout } from '@proton/pass/components/Layout/Lobby/LobbyLayout';
-import { clientErrored } from '@proton/pass/lib/client';
-import browser from '@proton/pass/lib/globals/browser';
-import { ForkType } from '@proton/shared/lib/authentication/fork/constants';
-import { PASS_APP_NAME, PASS_SHORT_APP_NAME } from '@proton/shared/lib/constants';
-import noop from '@proton/utils/noop';
-
-const getCriticalRuntimeErrorMessage = (): string => {
-    const base = c('Error').t`Your browser is having difficulties activating ${PASS_APP_NAME}.`;
-    const note = c('Info')
-        .t`Try reloading or reinstalling the extension and make sure your browser and ${PASS_SHORT_APP_NAME} are up-to-date.`;
-
-    if (BUILD_TARGET === 'safari') {
-        const warning = c('Error')
-            .t`This may occur after a long time of not using ${PASS_SHORT_APP_NAME}, or clearing your Safari history.`;
-
-        return `${base} ${warning}\n${note}`;
-    }
-
-    return `${base}\n${note}`;
-};
+import { clientBusy, clientErrored } from '@proton/pass/lib/client';
+import { AppStatus } from '@proton/pass/types';
 
 export const Lobby: FC = () => {
-    const { logout } = useExtensionClient();
     const state = useAppState();
+    const busy = clientBusy(state.status);
     const errored = clientErrored(state.status);
 
-    const requestFork = useRequestForkWithPermissions({ autoClose: true });
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [twoFactor, setTwoFactor] = useState('');
+    const [showTwoFactor, setShowTwoFactor] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const criticalError = state.criticalRuntimeError ? getCriticalRuntimeErrorMessage() : undefined;
-    const autoReload = BUILD_TARGET === 'safari' && state.criticalRuntimeError;
+    const handleLogin = useCallback(async () => {
+        if (!email || !password) return;
 
-    const viewLogs = useCallback(() => {
-        const url = browser.runtime.getURL('/internal.html#/logs');
-        browser.tabs.create({ url }).catch(noop);
-    }, []);
+        setLoading(true);
+        setError(null);
+
+        try {
+            const response = await sendMessage(
+                popupMessage({
+                    type: WorkerMessageType.BITWARDEN_LOGIN,
+                    payload: {
+                        email,
+                        password,
+                        ...(showTwoFactor && twoFactor
+                            ? { twoFactorToken: twoFactor, twoFactorProvider: 0 }
+                            : {}),
+                    },
+                })
+            );
+
+            if (response.type === 'error') {
+                if (response.error?.includes('Two-factor')) {
+                    setShowTwoFactor(true);
+                    setError('Enter your two-factor authentication code');
+                } else {
+                    setError(response.error || 'Login failed');
+                }
+            }
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Login failed');
+        } finally {
+            setLoading(false);
+        }
+    }, [email, password, twoFactor, showTwoFactor]);
+
+    const handleKeyDown = useCallback(
+        (e: React.KeyboardEvent) => {
+            if (e.key === 'Enter') handleLogin();
+        },
+        [handleLogin]
+    );
+
+    if (busy) {
+        return (
+            <LobbyLayout>
+                <div className="flex flex-column items-center gap-3 mt-12 w-full anime-fade-in">
+                    <CircleLoader size="medium" />
+                    <span className="block text-sm text-weak">
+                        {state.status === AppStatus.AUTHORIZING
+                            ? 'Signing you in'
+                            : state.status === AppStatus.BOOTING
+                              ? 'Decrypting your data'
+                              : 'Loading BastionPass'}
+                    </span>
+                </div>
+            </LobbyLayout>
+        );
+    }
 
     return (
         <LobbyLayout>
-            <LobbyContent
-                error={criticalError}
-                status={state.status}
-                warning={errored ? c('Warning').t`An error occurred while resuming your session` : undefined}
-                onFork={requestFork}
-                onLogin={(options) => sendMessage(popupMessage({ type: WorkerMessageType.AUTH_INIT, options }))}
-                onLogout={logout}
-                onOffline={noop}
-                onRegister={() => requestFork(ForkType.SIGNUP)}
-                renderError={(message) => <PromptForReload message={message} autoReload={autoReload} browserError />}
-                renderFooter={() =>
-                    errored ? (
-                        <div className="absolute bottom-0 right-0 mb-2 mr-2">
-                            <Button
-                                color="weak"
-                                shape="underline"
-                                size="small"
-                                className="text-sm color-weak"
-                                onClick={viewLogs}
-                            >
-                                {c('Action').t`View app logs`}
-                            </Button>
-                        </div>
-                    ) : null
-                }
-            />
+            <div className="anime-fade-in" style={{ '--anime-delay': '250ms' } as React.CSSProperties}>
+                <div className="flex flex-column items-center gap-3">
+                    <span className="pass-lobby--heading w-full text-bold text-norm text-no-wrap flex items-end justify-center user-select-none">
+                        BastionPass
+                    </span>
+                    <span className="text-norm text-sm">Sign in to your vault</span>
+                </div>
+
+                {error && (
+                    <div className="mt-4 p-3 rounded bg-danger color-invert text-sm">
+                        {error}
+                    </div>
+                )}
+
+                <div className="flex flex-column gap-2 mt-6">
+                    <input
+                        type="email"
+                        placeholder="Email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        autoFocus
+                        className="w-full p-3 rounded border border-weak bg-norm text-norm"
+                        style={{ outline: 'none', fontSize: '14px' }}
+                    />
+
+                    <input
+                        type="password"
+                        placeholder="Master password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="w-full p-3 rounded border border-weak bg-norm text-norm"
+                        style={{ outline: 'none', fontSize: '14px' }}
+                    />
+
+                    {showTwoFactor && (
+                        <input
+                            type="text"
+                            placeholder="Two-factor code"
+                            value={twoFactor}
+                            onChange={(e) => setTwoFactor(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            autoFocus
+                            className="w-full p-3 rounded border border-weak bg-norm text-norm"
+                            style={{ outline: 'none', fontSize: '14px' }}
+                        />
+                    )}
+
+                    <Button
+                        pill
+                        shape="solid"
+                        color="norm"
+                        className="w-full mt-2"
+                        onClick={handleLogin}
+                        disabled={loading || !email || !password}
+                    >
+                        {loading ? <CircleLoader size="small" /> : 'Sign in'}
+                    </Button>
+                </div>
+            </div>
         </LobbyLayout>
     );
 };

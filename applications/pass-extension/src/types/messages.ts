@@ -94,6 +94,7 @@ export enum WorkerMessageType {
     AUTH_INIT = 'AUTH_INIT',
     AUTH_PULL_FORK = 'AUTH_PULL_FORK',
     AUTH_UNLOCK = 'AUTH_UNLOCK',
+    BITWARDEN_LOGIN = 'BITWARDEN_LOGIN',
 
     AUTOFILL_CC = 'AUTOFILL_CC',
     AUTOFILL_CC_QUERY = 'AUTOFILL_CC_QUERY',
@@ -193,6 +194,7 @@ export type AuthConfirmPasswordMessage = WithPayload<WorkerMessageType.AUTH_CONF
 export type AuthInitMessage = { type: WorkerMessageType.AUTH_INIT; options: AuthOptions };
 export type AuthPullForkMessage = WithPayload<WorkerMessageType.AUTH_PULL_FORK, { selector: string }>;
 export type AuthUnlockMessage = WithPayload<WorkerMessageType.AUTH_UNLOCK, UnlockDTO>;
+export type BitwardenLoginMessage = WithPayload<WorkerMessageType.BITWARDEN_LOGIN, { email: string; password: string; twoFactorToken?: string; twoFactorProvider?: number }>;
 export type AutofillCCMessage = WithPayload<WorkerMessageType.AUTOFILL_CC, AutofillActionDTO>;
 
 export type AutofillCCQueryMessage = { type: WorkerMessageType.AUTOFILL_CC_QUERY };
@@ -291,6 +293,7 @@ export type WorkerMessage =
     | AuthInitMessage
     | AuthPullForkMessage
     | AuthUnlockMessage
+    | BitwardenLoginMessage
     | AutofillCCMessage
     | AutofillCCQueryMessage
     | AutofillIdentityMessage
@@ -383,6 +386,7 @@ type WorkerMessageResponseMap = {
     [WorkerMessageType.AUTH_INIT]: AppState;
     [WorkerMessageType.AUTH_PULL_FORK]: Result<PullForkResponse>;
     [WorkerMessageType.AUTH_UNLOCK]: Result;
+    [WorkerMessageType.BITWARDEN_LOGIN]: Result;
     [WorkerMessageType.AUTOFILL_CC_QUERY]: AutofillCCResult;
     [WorkerMessageType.AUTOFILL_IDENTITY_QUERY]: AutofillIdentityResult;
     [WorkerMessageType.AUTOFILL_IDENTITY]: ItemContent<'identity'>;
