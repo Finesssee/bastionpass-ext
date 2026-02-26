@@ -72,24 +72,37 @@ export const deriveMasterKey = async (
     throw new Error(`Unsupported KDF type: ${kdf}`);
 };
 
+/** HKDF-Expand only (RFC 5869 §2.3) using HMAC-SHA256.
+ *  WebCrypto's HKDF always does Extract+Expand, but Bitwarden needs Expand only
+ *  since the master key is already a pseudorandom key from PBKDF2/Argon2id. */
+const hkdfExpand = async (prk: ArrayBuffer, info: string, length: number): Promise<ArrayBuffer> => {
+    const hashLen = 32; // SHA-256 output
+    const n = Math.ceil(length / hashLen);
+    const hmacKey = await crypto.subtle.importKey('raw', prk, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+
+    const okm = new Uint8Array(n * hashLen);
+    let previousT = new Uint8Array(0);
+
+    for (let i = 0; i < n; i++) {
+        const data = new Uint8Array(previousT.length + info.length + 1);
+        data.set(previousT);
+        data.set(ENC.encode(info), previousT.length);
+        data[data.length - 1] = i + 1;
+
+        previousT = new Uint8Array(await crypto.subtle.sign('HMAC', hmacKey, data));
+        okm.set(previousT, i * hashLen);
+    }
+
+    return okm.slice(0, length).buffer;
+};
+
 /** Stretch the 256-bit master key into a 512-bit stretched key (encKey || macKey)
  *  using HKDF-Expand with info strings "enc" and "mac". */
 export const stretchMasterKey = async (
     masterKey: ArrayBuffer
 ): Promise<{ encKey: ArrayBuffer; macKey: ArrayBuffer }> => {
-    const hkdfKey = await crypto.subtle.importKey('raw', masterKey, 'HKDF', false, ['deriveBits']);
-
-    const encKey = await crypto.subtle.deriveBits(
-        { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: ENC.encode('enc') },
-        hkdfKey,
-        256
-    );
-
-    const macKey = await crypto.subtle.deriveBits(
-        { name: 'HKDF', hash: 'SHA-256', salt: new Uint8Array(0), info: ENC.encode('mac') },
-        hkdfKey,
-        256
-    );
+    const encKey = await hkdfExpand(masterKey, 'enc', 32);
+    const macKey = await hkdfExpand(masterKey, 'mac', 32);
 
     return { encKey, macKey };
 };
