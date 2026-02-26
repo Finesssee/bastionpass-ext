@@ -20,7 +20,7 @@ const BUILD_STORE_TARGET = parseEnvVar('BUILD_STORE_TARGET', '', String);
 const ENV = parseEnvVar('NODE_ENV', 'development', String);
 const HTTP_DEBUGGER = parseEnvVar('HTTP_DEBUGGER', false, parseBool);
 const HTTP_DEBUGGER_PORT = parseEnvVar('HTTP_DEBUGGER_PORT', 3000, Number);
-const MANIFEST_KEY = parseEnvVar('MANIFEST_KEY', BUILD_TARGET === 'chrome' ? 'chrome:production' : '', String);
+const MANIFEST_KEY = parseEnvVar('MANIFEST_KEY', '', String);
 const REDUX_DEVTOOLS = parseEnvVar('REDUX_DEVTOOLS', false, Boolean);
 const REDUX_DEVTOOLS_PORT = parseEnvVar('REDUX_DEVTOOLS_PORT', 8000, parseInt);
 const RELEASE = parseEnvVar('RELEASE', false, parseBool);
