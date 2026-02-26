@@ -1,4 +1,4 @@
-import { type FC, useCallback, useState } from 'react';
+import { type FC, useCallback, useEffect, useState } from 'react';
 
 import { popupMessage, sendMessage } from 'proton-pass-extension/lib/message/send-message';
 import { WorkerMessageType } from 'proton-pass-extension/types/messages';
@@ -21,6 +21,41 @@ export const Lobby: FC = () => {
     const [showTwoFactor, setShowTwoFactor] = useState(false);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+
+    // SimpleLogin config
+    const [showSLConfig, setShowSLConfig] = useState(false);
+    const [slUrl, setSlUrl] = useState('');
+    const [slApiKey, setSlApiKey] = useState('');
+    const [slSaved, setSlSaved] = useState(false);
+
+    // Load existing SL config on mount
+    useEffect(() => {
+        sendMessage(
+            popupMessage({
+                type: WorkerMessageType.SIMPLELOGIN_CONFIG,
+                payload: { get: true } as any,
+            })
+        ).then((res: any) => {
+            if (res.ok && res.baseUrl) {
+                setSlUrl(res.baseUrl);
+                setSlApiKey(res.apiKey);
+                setSlSaved(true);
+            }
+        }).catch(() => {});
+    }, []);
+
+    const handleSaveSLConfig = useCallback(async () => {
+        if (!slUrl || !slApiKey) return;
+        try {
+            await sendMessage(
+                popupMessage({
+                    type: WorkerMessageType.SIMPLELOGIN_CONFIG,
+                    payload: { baseUrl: slUrl, apiKey: slApiKey },
+                })
+            );
+            setSlSaved(true);
+        } catch {}
+    }, [slUrl, slApiKey]);
 
     const handleLogin = useCallback(async () => {
         if (!email || !password) return;
@@ -64,6 +99,8 @@ export const Lobby: FC = () => {
         [handleLogin]
     );
 
+    const inputStyle = { outline: 'none', fontSize: '14px' } as const;
+
     if (busy) {
         return (
             <LobbyLayout>
@@ -106,7 +143,7 @@ export const Lobby: FC = () => {
                         onKeyDown={handleKeyDown}
                         autoFocus
                         className="w-full p-3 rounded border border-weak bg-norm text-norm"
-                        style={{ outline: 'none', fontSize: '14px' }}
+                        style={inputStyle}
                     />
 
                     <input
@@ -116,7 +153,7 @@ export const Lobby: FC = () => {
                         onChange={(e) => setPassword(e.target.value)}
                         onKeyDown={handleKeyDown}
                         className="w-full p-3 rounded border border-weak bg-norm text-norm"
-                        style={{ outline: 'none', fontSize: '14px' }}
+                        style={inputStyle}
                     />
 
                     {showTwoFactor && (
@@ -128,7 +165,7 @@ export const Lobby: FC = () => {
                             onKeyDown={handleKeyDown}
                             autoFocus
                             className="w-full p-3 rounded border border-weak bg-norm text-norm"
-                            style={{ outline: 'none', fontSize: '14px' }}
+                            style={inputStyle}
                         />
                     )}
 
@@ -142,6 +179,47 @@ export const Lobby: FC = () => {
                     >
                         {loading ? <CircleLoader size="small" /> : 'Sign in'}
                     </Button>
+
+                    {/* SimpleLogin config (collapsible) */}
+                    <button
+                        type="button"
+                        onClick={() => setShowSLConfig(!showSLConfig)}
+                        className="w-full mt-3 text-sm text-weak bg-transparent border-none cursor-pointer"
+                        style={{ textDecoration: 'underline', padding: 0 }}
+                    >
+                        {showSLConfig ? '▾ Hide email alias settings' : '▸ Email aliases (optional)'}
+                    </button>
+
+                    {showSLConfig && (
+                        <div className="flex flex-column gap-2 mt-1">
+                            <input
+                                type="url"
+                                placeholder="SimpleLogin URL (e.g. https://sl.example.com)"
+                                value={slUrl}
+                                onChange={(e) => { setSlUrl(e.target.value); setSlSaved(false); }}
+                                className="w-full p-3 rounded border border-weak bg-norm text-norm"
+                                style={inputStyle}
+                            />
+                            <input
+                                type="password"
+                                placeholder="SimpleLogin API key"
+                                value={slApiKey}
+                                onChange={(e) => { setSlApiKey(e.target.value); setSlSaved(false); }}
+                                className="w-full p-3 rounded border border-weak bg-norm text-norm"
+                                style={inputStyle}
+                            />
+                            <Button
+                                pill
+                                shape="outline"
+                                color="norm"
+                                className="w-full"
+                                onClick={handleSaveSLConfig}
+                                disabled={!slUrl || !slApiKey || slSaved}
+                            >
+                                {slSaved ? '✓ Saved' : 'Save alias config'}
+                            </Button>
+                        </div>
+                    )}
                 </div>
             </div>
         </LobbyLayout>
