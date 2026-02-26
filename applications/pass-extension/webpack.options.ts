@@ -44,7 +44,7 @@ const options: Partial<ProtonPackOptions> = {
     version: dev ? `${JSON.parse(version)}-dev` : JSON.parse(version),
     api: `https://vault.southernwind.xyz/api`,
     apiProxy: false,
-    sso: '',
+    sso: 'https://vault.southernwind.xyz',
     publicPath: '/',
     appMode: 'standalone',
     featureFlags: '',
