@@ -51,7 +51,11 @@ const createBitwardenApi = (config: BitwardenApiConfig) => {
             body: JSON.stringify(body),
         });
 
-        if (!res.ok) throw new BitwardenApiError(`${path} failed: ${res.status}`, res.status, await res.json().catch(() => null));
+        if (!res.ok) {
+            const data = await res.json().catch(() => null);
+            const serverMsg = data?.message || data?.error_description || '';
+            throw new BitwardenApiError(serverMsg ? `${serverMsg}` : `${path} failed: ${res.status}`, res.status, data);
+        }
         return res.json();
     };
 
@@ -70,7 +74,8 @@ const createBitwardenApi = (config: BitwardenApiConfig) => {
                 throw new TwoFactorRequiredError(data.TwoFactorProviders2);
             }
 
-            throw new BitwardenApiError(`${path} failed: ${res.status}`, res.status, data);
+            const serverMsg = data?.message || data?.error_description || '';
+            throw new BitwardenApiError(serverMsg ? `${serverMsg}` : `${path} failed: ${res.status}`, res.status, data);
         }
 
         return res.json();
@@ -82,7 +87,11 @@ const createBitwardenApi = (config: BitwardenApiConfig) => {
             headers: headers({ Accept: 'application/json' }),
         });
 
-        if (!res.ok) throw new BitwardenApiError(`${path} failed: ${res.status}`, res.status, await res.json().catch(() => null));
+        if (!res.ok) {
+            const data = await res.json().catch(() => null);
+            const serverMsg = data?.message || data?.error_description || '';
+            throw new BitwardenApiError(serverMsg ? `${serverMsg}` : `${path} failed: ${res.status}`, res.status, data);
+        }
         return res.json();
     };
 
@@ -94,8 +103,7 @@ const createBitwardenApi = (config: BitwardenApiConfig) => {
         getAccessToken: () => accessToken,
 
         /** Get KDF parameters for a user's email before login. */
-        preLogin: (email: string): Promise<PreLoginResponse> =>
-            jsonPost('/api/accounts/prelogin', { email }),
+        preLogin: (email: string): Promise<PreLoginResponse> => jsonPost('/api/accounts/prelogin', { email }),
 
         /** Authenticate with email + master password hash.
          *  Returns tokens and encrypted symmetric key. */
@@ -142,8 +150,7 @@ const createBitwardenApi = (config: BitwardenApiConfig) => {
         getCipher: (id: string): Promise<CipherResponse> => jsonGet(`/api/ciphers/${id}`),
 
         /** Create a new cipher. */
-        createCipher: (cipher: Record<string, unknown>): Promise<CipherResponse> =>
-            jsonPost('/api/ciphers', cipher),
+        createCipher: (cipher: Record<string, unknown>): Promise<CipherResponse> => jsonPost('/api/ciphers', cipher),
 
         /** Update an existing cipher. */
         updateCipher: (id: string, cipher: Record<string, unknown>): Promise<CipherResponse> =>
