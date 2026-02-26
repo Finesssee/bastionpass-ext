@@ -1,6 +1,6 @@
 {
-    "name": "Proton Pass: Free Password Manager",
-    "description": "Free and fully encrypted password manager to keep your logins and passwords safe.",
+    "name": "BastionPass: Self-Hosted Password Manager",
+    "description": "Self-hosted password manager powered by Vaultwarden with email alias support.",
     "version": "1.34.3",
     "manifest_version": 3,
     "background": {
@@ -17,26 +17,7 @@
             "run_at": "document_end"
         },
         {
-            "matches": [
-                "https://*.proton.me/*",
-                "https://*.proton.black/*",
-                "https://*.proton.pink/*",
-                "https://*.proton.dev/*",
-                "https://*.protontech.ch/*"
-            ],
-            "js": ["external.js"],
-            "all_frames": false,
-            "run_at": "document_end"
-        },
-        {
             "matches": ["https://*/*", "http://*/*"],
-            "exclude_matches": [
-                "https://pass.proton.me/*",
-                "https://pass.proton.dev/*",
-                "https://pass.proton.black/*",
-                "https://pass.proton.pink/*",
-                "https://pass.protontech.ch/*"
-            ],
             "js": ["webauthn.js"],
             "all_frames": false,
             "run_at": "document_start",
@@ -91,7 +72,7 @@
     ],
     "browser_specific_settings": {
         "gecko": {
-            "id": "78272b6fa58f4a1abaac99321d503a20@proton.me",
+            "id": "bastionpass@southernwind.xyz",
             "strict_min_version": "109.0"
         }
     }

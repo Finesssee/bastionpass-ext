@@ -9,7 +9,6 @@ import envVars from './tools/env';
 
 const { BUILD_TARGET } = envVars;
 
-const apiEnv = process.env.API_ENV || 'proton.me';
 const dev = process.env.NODE_ENV !== 'production';
 
 const SUPPORTED_TARGETS = ['chrome', 'firefox', 'safari'];
@@ -43,9 +42,9 @@ const options: Partial<ProtonPackOptions> = {
         }
     })(),
     version: dev ? `${JSON.parse(version)}-dev` : JSON.parse(version),
-    api: `https://pass.${apiEnv}/api`,
+    api: `https://vault.southernwind.xyz/api`,
     apiProxy: false,
-    sso: `https://account.${apiEnv}`,
+    sso: '',
     publicPath: '/',
     appMode: 'standalone',
     featureFlags: '',
