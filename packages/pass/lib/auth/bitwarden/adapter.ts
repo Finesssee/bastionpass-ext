@@ -11,9 +11,9 @@
  */
 import { obfuscate } from '@proton/pass/utils/obfuscate/xor';
 
+import { decryptEncString } from './crypto';
 import type { CipherResponse, SyncResponse } from './types';
 import { CipherType } from './types';
-import { decryptEncString } from './crypto';
 
 const DEFAULT_SHARE_ID = 'bw-default-vault';
 const DEFAULT_VAULT_NAME = 'My Vault';
@@ -37,22 +37,6 @@ const tryDecrypt = async (
 const toEpoch = (iso: string | null | undefined): number => {
     if (!iso) return Math.floor(Date.now() / 1000);
     return Math.floor(new Date(iso).getTime() / 1000);
-};
-
-/** Map Bitwarden cipher type to Proton Pass item type string. */
-const mapCipherType = (type: CipherType): string => {
-    switch (type) {
-        case CipherType.Login:
-            return 'login';
-        case CipherType.SecureNote:
-            return 'note';
-        case CipherType.Card:
-            return 'creditCard';
-        case CipherType.Identity:
-            return 'identity';
-        default:
-            return 'note'; // fallback
-    }
 };
 
 /** Build the share (vault) map from Bitwarden folders. */
@@ -90,7 +74,7 @@ export const buildShares = async (
     };
 
     // Map each Bitwarden folder to a Pass share
-    for (const folder of syncData.Folders) {
+    for (const folder of syncData.folders) {
         const name = await tryDecrypt(folder.Name, encKey, macKey);
         const shareId = `bw-folder-${folder.Id}`;
 
@@ -124,8 +108,7 @@ export const buildShares = async (
 };
 
 /** Map a Bitwarden folder ID to a Pass share ID. */
-const mapShareId = (folderId: string | null): string =>
-    folderId ? `bw-folder-${folderId}` : DEFAULT_SHARE_ID;
+const mapShareId = (folderId: string | null): string => (folderId ? `bw-folder-${folderId}` : DEFAULT_SHARE_ID);
 
 /** Build a Pass ItemRevision from a decrypted Bitwarden cipher. */
 const buildLoginItem = (
@@ -171,12 +154,7 @@ const buildLoginItem = (
     },
 });
 
-const buildNoteItem = (
-    cipher: CipherResponse,
-    shareId: string,
-    name: string,
-    notes: string
-): any => ({
+const buildNoteItem = (cipher: CipherResponse, shareId: string, name: string, notes: string): any => ({
     itemId: cipher.Id,
     shareId,
     revision: 1,
@@ -244,9 +222,7 @@ const buildCreditCardItem = (
 });
 
 /** Build custom fields from Bitwarden fields. */
-const buildExtraFields = (
-    fields: CipherResponse['Fields'],
-): any[] => {
+const buildExtraFields = (fields: CipherResponse['Fields']): any[] => {
     if (!fields) return [];
     return fields.map((field) => ({
         fieldName: field.Name || '',
@@ -270,7 +246,7 @@ export const adaptBitwardenSync = async (
     }
 
     // Process each cipher
-    for (const cipher of syncData.Ciphers) {
+    for (const cipher of syncData.ciphers) {
         const shareId = mapShareId(cipher.FolderId);
         if (!items[shareId]) items[shareId] = {};
 

@@ -10,14 +10,9 @@
  *   6. Decrypt protected symmetric key → user encKey + macKey
  *   7. Store session
  */
-import {
-    decryptProtectedSymmetricKey,
-    deriveMasterKey,
-    hashMasterPassword,
-    stretchMasterKey,
-} from './crypto';
 import { type BitwardenApi, type BitwardenApiConfig, createBitwardenApi } from './api';
-import type { BitwardenSession, KdfType } from './types';
+import { decryptProtectedSymmetricKey, deriveMasterKey, hashMasterPassword, stretchMasterKey } from './crypto';
+import type { BitwardenSession } from './types';
 
 export type LoginResult = {
     session: BitwardenSession;
@@ -34,13 +29,13 @@ export type AuthOrchestratorConfig = BitwardenApiConfig & {
     deviceType: number;
 };
 
-const uint8ToBase64 = (bytes: Uint8Array): string => {
+const uint8ToBase64 = (bytes: Uint8Array<ArrayBuffer>): string => {
     let binary = '';
     for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     return btoa(binary);
 };
 
-const base64ToUint8 = (b64: string): Uint8Array => {
+const base64ToUint8 = (b64: string): Uint8Array<ArrayBuffer> => {
     const binary = atob(b64);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -66,10 +61,10 @@ export const createAuthOrchestrator = (config: AuthOrchestratorConfig) => {
             const masterKey = await deriveMasterKey(
                 password,
                 email,
-                preLogin.Kdf,
-                preLogin.KdfIterations,
-                preLogin.KdfMemory,
-                preLogin.KdfParallelism
+                preLogin.kdf,
+                preLogin.kdfIterations,
+                preLogin.kdfMemory,
+                preLogin.kdfParallelism
             );
 
             // Step 3: Stretch master key → encKey + macKey
@@ -121,7 +116,9 @@ export const createAuthOrchestrator = (config: AuthOrchestratorConfig) => {
         },
 
         /** Refresh the access token using the stored refresh token. */
-        refresh: async (refreshToken: string): Promise<{ accessToken: string; refreshToken: string; expiresAt: number }> => {
+        refresh: async (
+            refreshToken: string
+        ): Promise<{ accessToken: string; refreshToken: string; expiresAt: number }> => {
             const response = await api.refreshToken(refreshToken);
             api.setAccessToken(response.access_token);
 
@@ -133,12 +130,14 @@ export const createAuthOrchestrator = (config: AuthOrchestratorConfig) => {
         },
 
         /** Full sync: fetch profile + all vault data. Populates session.userId. */
-        sync: async (session: BitwardenSession): Promise<{ session: BitwardenSession; sync: Awaited<ReturnType<BitwardenApi['sync']>> }> => {
+        sync: async (
+            session: BitwardenSession
+        ): Promise<{ session: BitwardenSession; sync: Awaited<ReturnType<BitwardenApi['sync']>> }> => {
             api.setAccessToken(session.accessToken);
             const syncData = await api.sync();
 
             return {
-                session: { ...session, userId: syncData.Profile.Id },
+                session: { ...session, userId: syncData.profile.id },
                 sync: syncData,
             };
         },

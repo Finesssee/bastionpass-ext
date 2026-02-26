@@ -6,10 +6,10 @@ export enum KdfType {
 }
 
 export type PreLoginResponse = {
-    Kdf: KdfType;
-    KdfIterations: number;
-    KdfMemory: number | null;
-    KdfParallelism: number | null;
+    kdf: KdfType;
+    kdfIterations: number;
+    kdfMemory: number | null;
+    kdfParallelism: number | null;
 };
 
 export type LoginRequest = {
@@ -70,31 +70,34 @@ export enum EncType {
 }
 
 export type SyncResponse = {
-    Profile: {
-        Id: string;
-        Name: string;
-        Email: string;
-        EmailVerified: boolean;
-        Premium: boolean;
-        Key: string;
-        PrivateKey: string;
-        SecurityStamp: string;
-        Organizations: Array<{
-            Id: string;
-            Name: string;
-            Key: string;
-            Enabled: boolean;
-        }>;
+    /** Vaultwarden returns lowercase top-level keys */
+    profile: {
+        /** Profile fields are camelCase in Vaultwarden */
+        id: string;
+        name: string;
+        email: string;
+        emailVerified: boolean;
+        premium: boolean;
+        key: string;
+        privateKey: string;
+        securityStamp: string;
+        organizations: {
+            id: string;
+            name: string;
+            key: string;
+            enabled: boolean;
+        }[];
     };
-    Folders: Array<{
+    folders: {
+        /** Folder fields are PascalCase in Vaultwarden */
         Id: string;
         Name: string;
         RevisionDate: string;
-    }>;
-    Ciphers: CipherResponse[];
-    Domains: {
+    }[];
+    ciphers: CipherResponse[];
+    domains: {
         EquivalentDomains: string[][];
-        GlobalEquivalentDomains: Array<{ Type: number; Domains: string[]; Excluded: boolean }>;
+        GlobalEquivalentDomains: { Type: number; Domains: string[]; Excluded: boolean }[];
     };
 };
 
@@ -108,7 +111,7 @@ export type CipherResponse = {
     Favorite: boolean;
     Reprompt: number;
     Login?: {
-        Uris: Array<{ Uri: string; Match: number | null }> | null;
+        Uris: { Uri: string; Match: number | null }[] | null;
         Username: string | null;
         Password: string | null;
         Totp: string | null;
@@ -124,7 +127,7 @@ export type CipherResponse = {
     };
     Identity?: Record<string, string | null>;
     SecureNote?: { Type: number };
-    Fields: Array<{ Name: string | null; Value: string | null; Type: number }> | null;
+    Fields: { Name: string | null; Value: string | null; Type: number }[] | null;
     RevisionDate: string;
     CreationDate: string;
     DeletedDate: string | null;
