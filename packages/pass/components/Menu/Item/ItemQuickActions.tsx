@@ -26,10 +26,9 @@ import { useCopyToClipboard } from '@proton/pass/components/Settings/Clipboard/C
 import { useVaultCreationPolicy } from '@proton/pass/hooks/organization/useVaultCreationPolicy';
 import { useFeatureFlag } from '@proton/pass/hooks/useFeatureFlag';
 import { useNewItemShortcut } from '@proton/pass/hooks/useNewItemShortcut';
-import { selectAliasLimits, selectCanCreateItems, selectPassPlan } from '@proton/pass/store/selectors';
+import { selectAliasLimits, selectCanCreateItems } from '@proton/pass/store/selectors';
 import type { ItemType, MaybeNull } from '@proton/pass/types';
 import { PassFeature } from '@proton/pass/types/api/features';
-import { UserPassPlan } from '@proton/pass/types/api/plan';
 import { pipe } from '@proton/pass/utils/fp/pipe';
 import noop from '@proton/utils/noop';
 
@@ -57,7 +56,7 @@ export const ItemQuickActions: FC<Props> = ({ origin = null }) => {
     const onCreate = useCallback((type: ItemType) => navigate(getNewItemRoute(type, scope)), [scope]);
 
     const { needsUpgrade, aliasLimit, aliasLimited, aliasTotalCount } = useSelector(selectAliasLimits);
-    const isFreePlan = useSelector(selectPassPlan) === UserPassPlan.FREE;
+    const isFreePlan = false; /* BastionPass: no plan gating */
     const freeCcFlag = useFeatureFlag(PassFeature.PassAllowCreditCardFreeUsers);
     const creditCardLock = !freeCcFlag && isFreePlan;
 

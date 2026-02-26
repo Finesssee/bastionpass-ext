@@ -33,10 +33,9 @@ import { filesFormInitializer } from '@proton/pass/lib/file-attachments/helpers'
 import { obfuscateExtraFields } from '@proton/pass/lib/items/item.obfuscation';
 import { bindOTPSanitizer, sanitizeExtraField } from '@proton/pass/lib/items/item.utils';
 import { validateCreditCardForm } from '@proton/pass/lib/validation/credit-card';
-import { selectPassPlan, selectVaultLimits } from '@proton/pass/store/selectors';
+import { selectVaultLimits } from '@proton/pass/store/selectors';
 import type { CreditCardItemFormValues } from '@proton/pass/types';
 import { PassFeature } from '@proton/pass/types/api/features';
-import { UserPassPlan } from '@proton/pass/types/api/plan';
 import { obfuscate } from '@proton/pass/utils/obfuscate/xor';
 import { uniqueId } from '@proton/pass/utils/string/unique-id';
 import { formatExpirationDateMMYY } from '@proton/pass/utils/time/expiration-date';
@@ -92,7 +91,7 @@ export const CreditCardNew: FC<ItemNewViewProps<'creditCard'>> = ({ shareId, onS
     });
 
     useItemDraft<CreditCardItemFormValues>(form, { mode: 'new', type: 'creditCard' });
-    const isFreePlan = useSelector(selectPassPlan) === UserPassPlan.FREE;
+    const isFreePlan = false; /* BastionPass: no plan gating */
     const freeCcFlag = useFeatureFlag(PassFeature.PassAllowCreditCardFreeUsers);
     const upsell = !freeCcFlag && isFreePlan;
 
